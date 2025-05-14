@@ -43,3 +43,26 @@ d----           5/14/2025 10:10 AM                New-Ubuntu-Cuda12
 -----           4/15/2025  6:24 AM           1065 Wildcard.h
 
 New-Ubuntu-Cuda12 directory:
+
+HASH160 SEARCH MODE INFORMATION
+
+The hash160 search mode requires:
+
+1. A pattern file containing EXACTLY 40 hexadecimal characters
+   (representing the 20 bytes of a RIPEMD160 hash of a Bitcoin public key)
+
+2. No leading zeros in the pattern when using the -hash160 flag
+   (the program may interpret patterns with leading zeros as addresses instead of hash160 values)
+
+3. The -hash160 flag must come before the -i flag in the command line
+
+Example pattern: f6f5431d25bbf7b12e8add9af5e3475c44a0a5bc
+
+To debug hash160 search issues:
+1. Verify pattern length is exactly 40 characters
+2. Ensure no trailing newlines or spaces in pattern file
+3. Try patterns without leading zeros
+4. Use xxd -p to inspect the pattern file for hidden characters
+
+TEST COMMAND:
+./vanitysearch -hash160 -i patterns.txt -o output.txt -gpuId 0 -start 400000000000000000 -end 7fffffffffffffffff
