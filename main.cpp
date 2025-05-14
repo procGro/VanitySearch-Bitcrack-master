@@ -28,6 +28,9 @@
 #include "hash/sha256.h"
 #include <thread>
 #include <atomic>
+#include <algorithm>  // For std::transform
+#include "Base58.h"   // For DecodeBase58
+#include "Bech32.h"   // For segwit_addr_decode
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <conio.h> // For _kbhit and _getch on Windows
@@ -43,6 +46,9 @@ std::atomic<bool> stopMonitorKey(false);
 int idxcount;
 double t_Paused;
 bool randomMode = false;
+
+// Forward declaration of function defined at the end of this file
+std::vector<int> parseGPUIds(const std::string& gpuParsed);
 
 #if defined(_WIN32) || defined(_WIN64)
 void monitorKeypress() {
