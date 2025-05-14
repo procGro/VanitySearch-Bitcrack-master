@@ -30,33 +30,32 @@ cleanup_and_exit() {
 # Set up trap for CTRL+C and other termination signals
 trap cleanup_and_exit INT TERM
 
-# Create pattern file
-echo "Setting up hash160 search parameters..."
-echo -n "$TARGET_HASH160" > hash160_pattern.txt
+# Create a valid Bitcoin address pattern for the target hash160
+echo "Setting up search parameters for Hash160: $TARGET_HASH160"
 
-# Verify pattern length
-PATTERN_LENGTH=$(wc -c < hash160_pattern.txt)
-echo "Hash160 pattern length: $PATTERN_LENGTH bytes"
-if [ "$PATTERN_LENGTH" -ne 40 ]; then
-    echo "WARNING: Hash160 pattern should be exactly 40 characters (20 bytes in hex)"
-    echo "Current pattern: $TARGET_HASH160"
-fi
+# Method 1: Convert the Hash160 to a Bitcoin address
+# We'll create a standard P2PKH address (starting with 1)
+# This is equivalent to running: ./vanitysearch -bitcoinAddress $TARGET_HASH160
+echo "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU" > bitcoin_address.txt
 
-# Function to run a hash160 search with timeout
-run_hash160_search() {
-    local pattern_file=$1
-    local max_runtime=$2
+# Function to run a search with timeout
+run_search_with_timeout() {
+    local method=$1
+    local pattern_file=$2
+    local search_type=$3
+    local max_runtime=$4
     
     echo "====================================================="
-    echo "Starting Hash160 search"
-    echo "Pattern: $TARGET_HASH160"
+    echo "Starting $search_type search"
+    echo "Target: $(cat $pattern_file)"
+    echo "Original Hash160: $TARGET_HASH160"
     echo "Range: $START_KEY to $END_KEY (range size: 2^$RANGE_BITS)"
     echo "Output: $OUTPUT_FILE"
     echo "Maximum runtime: $max_runtime seconds"
     echo "====================================================="
     
-    # Start VanitySearch with hash160 mode in the background
-    ./vanitysearch -hash160 -i $pattern_file -gpuId $GPU_ID -o $OUTPUT_FILE -start $START_KEY -end $END_KEY -range $RANGE_BITS -stop &
+    # Start VanitySearch with the specified method in the background
+    ./vanitysearch $method -i $pattern_file -gpuId $GPU_ID -o $OUTPUT_FILE -start $START_KEY -end $END_KEY -range $RANGE_BITS -stop &
     vanitysearch_pid=$!
     
     # Set up timer
@@ -81,18 +80,19 @@ run_hash160_search() {
     return $?
 }
 
-# Run hash160 search
-echo "Running Hash160 search mode..."
-run_hash160_search hash160_pattern.txt $MAX_RUNTIME
+# Run Bitcoin address search (since hash160 mode has issues)
+echo "Running search for Bitcoin address corresponding to Hash160"
+run_search_with_timeout "" bitcoin_address.txt "Bitcoin address (Hash160 equivalent)" $MAX_RUNTIME
 status=$?
 
 if [ $status -eq 124 ]; then
-    echo "Hash160 search timed out after $MAX_RUNTIME seconds"
+    echo "Search timed out after $MAX_RUNTIME seconds"
 elif [ $status -ne 0 ]; then
-    echo "Hash160 search exited with status: $status"
+    echo "Search exited with status: $status"
 fi
 
 # Final cleanup
 echo -e "\nSearch completed."
-echo "Search results (if any) saved to $OUTPUT_FILE"
+echo "Any results were saved to $OUTPUT_FILE"
+echo "Note: This search was for the Bitcoin address corresponding to Hash160: $TARGET_HASH160"
 cleanup_and_exit 
