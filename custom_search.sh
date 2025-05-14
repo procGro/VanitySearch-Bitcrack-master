@@ -1,64 +1,105 @@
 #!/bin/bash
 
-# Save terminal settings
-stty -g > /tmp/term_settings.txt
-
-# Trap CTRL+C to ensure terminal settings are restored
-trap 'echo "Restoring terminal settings..."; stty $(cat /tmp/term_settings.txt); echo "Terminal restored"; exit' INT TERM
-
-# Custom parameters
+# Custom parameters - modify these for your search
 START_KEY="400000000000000000"
 END_KEY="7fffffffffffffffff"
 TARGET_ADDR="1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU"
 TARGET_HASH160="f6f5431d25bbf7b12e8add9af5e3475c44a0a5b8"
 OUTPUT_FILE="search_results.txt"
 GPU_ID=0
-TIMEOUT=180  # 3 minutes timeout
+MAX_RUNTIME=180  # Max runtime in seconds
 
-# Function to run a search with the given method
-run_search() {
+# Save original terminal settings
+original_tty_settings=$(stty -g)
+
+# Function to clean up and exit
+cleanup_and_exit() {
+    echo -e "\nTerminating search..."
+    
+    # Kill any running VanitySearch processes
+    if [ ! -z "$vanitysearch_pid" ]; then
+        kill -9 $vanitysearch_pid 2>/dev/null
+    fi
+    
+    # Restore terminal settings
+    stty "$original_tty_settings"
+    echo "Terminal settings restored"
+    exit 0
+}
+
+# Set up trap for CTRL+C and other termination signals
+trap cleanup_and_exit INT TERM
+
+# Create pattern files
+echo "Setting up search parameters..."
+echo "$TARGET_ADDR" > address_pattern.txt
+echo -n "$TARGET_HASH160" > hash160_pattern.txt
+
+# Function to run a search with timeout
+run_search_with_timeout() {
     local method=$1
     local pattern_file=$2
     local search_type=$3
+    local max_runtime=$4
     
     echo "====================================================="
-    echo "Starting $search_type search with $method"
+    echo "Starting $search_type search"
     echo "Range: $START_KEY to $END_KEY"
     echo "Output: $OUTPUT_FILE"
+    echo "Maximum runtime: $max_runtime seconds"
     echo "====================================================="
     
-    # Run VanitySearch and allow output to be displayed in real-time
-    # Note the use of stdbuf to ensure unbuffered output
-    if command -v stdbuf >/dev/null 2>&1; then
-        # Use stdbuf if available to ensure unbuffered output
-        stdbuf -o0 timeout ${TIMEOUT}s ./vanitysearch $method -i $pattern_file -gpuId $GPU_ID -o $OUTPUT_FILE -start $START_KEY -end $END_KEY -stop
-    else
-        # Fallback if stdbuf is not available
-        timeout ${TIMEOUT}s ./vanitysearch $method -i $pattern_file -gpuId $GPU_ID -o $OUTPUT_FILE -start $START_KEY -end $END_KEY -stop
-    fi
+    # Start VanitySearch in the background
+    ./vanitysearch $method -i $pattern_file -gpuId $GPU_ID -o $OUTPUT_FILE -start $START_KEY -end $END_KEY -stop &
+    vanitysearch_pid=$!
     
-    # Check the exit status
-    local status=$?
-    if [ $status -eq 124 ]; then
-        echo "Search timed out after ${TIMEOUT} seconds."
-    elif [ $status -ne 0 ]; then
-        echo "Search exited with status code: $status"
-    fi
-    echo ""
+    # Set up timer
+    SECONDS=0
+    
+    # Monitor the process
+    while kill -0 $vanitysearch_pid 2>/dev/null; do
+        # Check if we've exceeded maximum runtime
+        if [ $SECONDS -ge $max_runtime ]; then
+            echo -e "\nSearch timeout reached ($max_runtime seconds)"
+            kill -9 $vanitysearch_pid 2>/dev/null
+            wait $vanitysearch_pid 2>/dev/null
+            return 124  # Return timeout status
+        fi
+        
+        # Brief sleep to avoid CPU overload from the monitoring loop
+        sleep 0.1
+    done
+    
+    # Wait for process to finish and get its exit status
+    wait $vanitysearch_pid
+    return $?
 }
 
-# Method 1: Address search (most compatible)
+# Run address search first
 echo "Method 1: Standard Bitcoin Address Search"
-echo "$TARGET_ADDR" > address_pattern.txt
-run_search "" address_pattern.txt "Bitcoin address"
+run_search_with_timeout "" address_pattern.txt "Bitcoin address" $MAX_RUNTIME
+status=$?
 
-# Method 2: Hash160 search
+if [ $status -eq 124 ]; then
+    echo "Address search timed out after $MAX_RUNTIME seconds"
+elif [ $status -ne 0 ]; then
+    echo "Address search exited with status: $status"
+fi
+
+echo ""
+
+# Run hash160 search second
 echo "Method 2: Hash160 Search"
-echo -n "$TARGET_HASH160" > hash160_pattern.txt
-run_search "-hash160" hash160_pattern.txt "Hash160"
+run_search_with_timeout "-hash160" hash160_pattern.txt "Hash160" $MAX_RUNTIME
+status=$?
 
-# Restore terminal settings no matter what
-stty $(cat /tmp/term_settings.txt)
-echo "Terminal restored"
+if [ $status -eq 124 ]; then
+    echo "Hash160 search timed out after $MAX_RUNTIME seconds"
+elif [ $status -ne 0 ]; then
+    echo "Hash160 search exited with status: $status"
+fi
+
+# Final cleanup
+echo -e "\nAll searches completed."
 echo "Search results (if any) saved to $OUTPUT_FILE"
-exit 0 
+cleanup_and_exit 
