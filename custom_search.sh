@@ -8,6 +8,7 @@ TARGET_HASH160="f6f5431d25bbf7b12e8add9af5e3475c44a0a5b8"
 OUTPUT_FILE="search_results.txt"
 GPU_ID=0
 MAX_RUNTIME=180  # Max runtime in seconds
+RANGE_BITS=70    # Range size in bits (2^70 covers the entire range between start and end)
 
 # Save original terminal settings
 original_tty_settings=$(stty -g)
@@ -44,13 +45,13 @@ run_search_with_timeout() {
     
     echo "====================================================="
     echo "Starting $search_type search"
-    echo "Range: $START_KEY to $END_KEY"
+    echo "Range: $START_KEY to $END_KEY (range size: 2^$RANGE_BITS)"
     echo "Output: $OUTPUT_FILE"
     echo "Maximum runtime: $max_runtime seconds"
     echo "====================================================="
     
-    # Start VanitySearch in the background
-    ./vanitysearch $method -i $pattern_file -gpuId $GPU_ID -o $OUTPUT_FILE -start $START_KEY -end $END_KEY -stop &
+    # Start VanitySearch in the background - now with the range parameter
+    ./vanitysearch $method -i $pattern_file -gpuId $GPU_ID -o $OUTPUT_FILE -start $START_KEY -end $END_KEY -range $RANGE_BITS -stop &
     vanitysearch_pid=$!
     
     # Set up timer
