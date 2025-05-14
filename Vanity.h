@@ -20,6 +20,7 @@
 
 #include <string>
 #include <vector>
+#include <thread>
 #include "SECP256k1.h"
 #include "GPU/GPUEngine.h"
 #include <atomic>
