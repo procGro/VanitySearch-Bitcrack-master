@@ -18,9 +18,9 @@ OBJET = $(addprefix $(OBJDIR)/, \
         hash/ripemd160_sse.o hash/sha256_sse.o \
         GPU/GPUEngine.o Bech32.o Wildcard.o)
 
-CXX        = g++-9
+CXX        = g++
 CUDA       = /usr/local/cuda
-CXXCUDA    = /usr/bin/g++-9
+CXXCUDA    = /usr/bin/g++
 NVCC       = $(CUDA)/bin/nvcc
 
 ifdef debug
