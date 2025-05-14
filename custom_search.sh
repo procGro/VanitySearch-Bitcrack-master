@@ -27,10 +27,22 @@ run_search() {
     echo "Output: $OUTPUT_FILE"
     echo "====================================================="
     
-    timeout ${TIMEOUT}s ./vanitysearch $method -i $pattern_file -gpuId $GPU_ID -o $OUTPUT_FILE -start $START_KEY -end $END_KEY -stop
+    # Run VanitySearch and allow output to be displayed in real-time
+    # Note the use of stdbuf to ensure unbuffered output
+    if command -v stdbuf >/dev/null 2>&1; then
+        # Use stdbuf if available to ensure unbuffered output
+        stdbuf -o0 timeout ${TIMEOUT}s ./vanitysearch $method -i $pattern_file -gpuId $GPU_ID -o $OUTPUT_FILE -start $START_KEY -end $END_KEY -stop
+    else
+        # Fallback if stdbuf is not available
+        timeout ${TIMEOUT}s ./vanitysearch $method -i $pattern_file -gpuId $GPU_ID -o $OUTPUT_FILE -start $START_KEY -end $END_KEY -stop
+    fi
     
-    if [ $? -eq 124 ]; then
+    # Check the exit status
+    local status=$?
+    if [ $status -eq 124 ]; then
         echo "Search timed out after ${TIMEOUT} seconds."
+    elif [ $status -ne 0 ]; then
+        echo "Search exited with status code: $status"
     fi
     echo ""
 }
