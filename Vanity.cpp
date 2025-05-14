@@ -75,6 +75,8 @@ VanitySearch::VanitySearch(Secp256K1* secp, vector<std::string>& inputAddresses,
 	nbAddress = 0;
 	onlyFull = true;
 
+	printf("Debug: searchMode = %d, searchType = %d\n", searchMode, searchType);
+
 	for (int i = 0; i < (int)inputAddresses.size(); i++) 
 	{
 		ADDRESS_ITEM it;
@@ -111,6 +113,8 @@ VanitySearch::VanitySearch(Secp256K1* secp, vector<std::string>& inputAddresses,
 
 	if (loadingProgress)
 		fprintf(stdout, "\n");
+
+	printf("Debug: Final searchType = %d, nbAddress = %d\n", searchType, nbAddress);
 
 	if (nbAddress == 0) 
 	{
