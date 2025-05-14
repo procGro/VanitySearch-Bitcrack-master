@@ -223,9 +223,15 @@ bool VanitySearch::initAddress(std::string& address, ADDRESS_ITEM* it) {
 
 	int aType = -1;
 
-	// For Hash160 search mode, check if we're already in HASH160 mode
 	if (searchType == HASH160) {
 		aType = HASH160;
+		// For Hash160, just assign the type and skip validation
+		it->isFull = false;
+		it->sAddress = 0;
+		it->lAddress = 0;
+		it->address = (char*)address.c_str();
+		it->addressLength = (int)address.length();
+		return true;
 	} else {
 		// Otherwise determine address type from first character
 		switch (address.data()[0]) {
@@ -1141,7 +1147,7 @@ void VanitySearch::FindKeyGPU(TH_PARAM* ph) {
 				else {				
 					privkey.Add(&keycount);
 				}
-			
+	
 				checkAddr(*(address_t*)(it.hash), it.hash, privkey, it.incr, it.endo, it.mode);
 			}
 
