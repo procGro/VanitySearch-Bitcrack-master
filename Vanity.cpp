@@ -490,7 +490,10 @@ void VanitySearch::output(string addr, string pAddr, string pAddrHex, std::strin
 		
 		// Get the corresponding Bitcoin address (always use compressed for better usability)
 		Int privKey;
-		privKey.SetBase16(pAddrHex.c_str());
+		char* hexCopy = new char[pAddrHex.length() + 1];
+		strcpy(hexCopy, pAddrHex.c_str());
+		privKey.SetBase16(hexCopy);
+		delete[] hexCopy;
 		Point p = secp->ComputePublicKey(&privKey);
 		string btcAddr = secp->GetAddress(P2PKH, true, p);
 		
@@ -1018,7 +1021,9 @@ void VanitySearch::FindKeyGPU(TH_PARAM* ph) {
 	keySpaceSize.AddOne();
 
 	gpuKeySpaceSize.Set(&keySpaceSize);
-	gpuKeySpaceSize.Div(numGPUs);
+	Int gpuCount;
+	gpuCount.SetInt32(numGPUs);
+	gpuKeySpaceSize.Div(&gpuCount);
 
 	startPosition.Set(&gpuKeySpaceSize);
 	startPosition.Mult(thId);
