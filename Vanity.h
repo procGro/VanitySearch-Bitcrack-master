@@ -26,6 +26,8 @@
 #include <atomic>
 #ifdef WIN64
 #include <Windows.h>
+#else
+#include <pthread.h>
 #endif
 
 extern std::atomic<bool> Pause;

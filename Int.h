@@ -213,8 +213,11 @@ private:
 
 #ifndef WIN64
 
-// Missing intrinsics
-static uint64_t inline _umul128(uint64_t a, uint64_t b, uint64_t *h) {
+// Missing intrinsics - when GPU_ENGINE is defined, these are provided elsewhere
+#ifndef GPU_ENGINE
+
+// Rename functions to avoid conflicts with built-ins
+static inline uint64_t custom_umul128(uint64_t a, uint64_t b, uint64_t *h) {
   uint64_t rhi;
   uint64_t rlo;
   __asm__( "mulq  %[b];" :"=d"(rhi),"=a"(rlo) :"1"(a),[b]"rm"(b));
@@ -222,7 +225,7 @@ static uint64_t inline _umul128(uint64_t a, uint64_t b, uint64_t *h) {
   return rlo;
 }
 
-static int64_t inline _mul128(int64_t a, int64_t b, int64_t *h) {
+static inline int64_t custom_mul128(int64_t a, int64_t b, int64_t *h) {
   uint64_t rhi;
   uint64_t rlo;
   __asm__( "imulq  %[b];" :"=d"(rhi),"=a"(rlo) :"1"(a),[b]"rm"(b));
@@ -230,7 +233,7 @@ static int64_t inline _mul128(int64_t a, int64_t b, int64_t *h) {
   return rlo;  
 }
 
-static uint64_t inline _udiv128(uint64_t hi, uint64_t lo, uint64_t d,uint64_t *r) {
+static inline uint64_t custom_udiv128(uint64_t hi, uint64_t lo, uint64_t d, uint64_t *r) {
   uint64_t q;
   uint64_t _r;
   __asm__( "divq  %[d];" :"=d"(_r),"=a"(q) :"d"(hi),"a"(lo),[d]"rm"(d));
@@ -238,12 +241,20 @@ static uint64_t inline _udiv128(uint64_t hi, uint64_t lo, uint64_t d,uint64_t *r
   return q;  
 }
 
-static uint64_t inline __rdtsc() {
+static inline uint64_t custom_rdtsc() {
   uint32_t h;
   uint32_t l;
   __asm__( "rdtsc;" :"=d"(h),"=a"(l));
   return (uint64_t)h << 32 | (uint64_t)l;
 }
+
+// Define the standard names in terms of our custom implementations
+#define _umul128 custom_umul128
+#define _mul128 custom_mul128
+#define _udiv128 custom_udiv128
+#define __rdtsc custom_rdtsc
+
+#endif // GPU_ENGINE
 
 #define __shiftright128(a,b,n) ((a)>>(n))|((b)<<(64-(n)))
 #define __shiftleft128(a,b,n) ((b)<<(n))|((a)>>(64-(n)))

@@ -17,13 +17,14 @@
 
 #ifndef GPUENGINEH
 #define GPUENGINEH
-
+#define GPU_ENGINE
 #include <vector>
 #include "../SECP256k1.h"
 
 #define SEARCH_COMPRESSED 0
 #define SEARCH_UNCOMPRESSED 1
 #define SEARCH_BOTH 2
+#define SEARCH_HASH160 3
 
 
 // Number of thread per block
