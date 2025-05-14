@@ -1,0 +1,45 @@
+Files are present, but there may be issues accessing them. Listing current directory:
+
+    Directory: C:\Users\tuant\Downloads\Compressed\VanitySearch-Bitcrack-master
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----           4/15/2025  6:24 AM                Compiled-Ubuntu 22.04-Cuda11
+d----           4/15/2025  6:24 AM                Compiled-Ubuntu 22.04-Cuda12
+d----           5/10/2025  2:13 PM                Compiled-Windows-Cuda12
+d----           4/15/2025  6:24 AM                GPU
+d----           4/15/2025  6:24 AM                hash
+d----           5/14/2025 10:10 AM                New-Ubuntu-Cuda12
+-----           4/15/2025  6:24 AM           2518 .gitattributes
+-----           4/15/2025  6:24 AM           6223 .gitignore
+-----           4/15/2025  6:24 AM           3480 Base58.cpp
+-----           4/15/2025  6:24 AM           1562 Base58.h
+-----           4/15/2025  6:24 AM           6831 Bech32.cpp
+-----           4/15/2025  6:24 AM           3809 Bech32.h
+-----           4/15/2025  6:24 AM          40289 Int.cpp
+-----           4/15/2025  6:24 AM          11940 Int.h
+-----           4/15/2025  6:24 AM           1432 IntGroup.cpp
+-----           4/15/2025  6:24 AM            976 IntGroup.h
+-----           4/15/2025  6:24 AM          28682 IntMod.cpp
+-----           4/15/2025  6:24 AM          34523 LICENSE.txt
+-a---           5/14/2025 10:06 AM          20615 main.cpp
+-----           4/15/2025  6:24 AM           2544 Makefile
+-----           4/15/2025  6:24 AM           1708 Point.cpp
+-----           4/15/2025  6:24 AM           1121 Point.h
+-----           4/15/2025  6:24 AM           3077 Random.cpp
+-----           4/15/2025  6:24 AM            839 Random.h
+-----           4/15/2025  6:24 AM           2716 README.md
+-----           4/15/2025  6:24 AM          24709 SECP256K1.cpp
+-a---           5/14/2025 10:01 AM           2371 SECP256k1.h
+-----           4/15/2025  6:24 AM           4109 Timer.cpp
+-----           4/15/2025  6:24 AM           1358 Timer.h
+-a---           5/14/2025 10:05 AM          34733 Vanity.cpp
+-a---           5/14/2025 10:04 AM           4478 Vanity.h
+-----           4/15/2025  6:24 AM           1058 VanitySearch.sln
+-----           4/15/2025  6:24 AM           7564 VanitySearch.vcxproj
+-----           4/15/2025  6:24 AM           2927 VanitySearch.vcxproj.filters
+-a---           5/14/2025 10:13 AM             87 verification.txt
+-----           4/15/2025  6:24 AM           1384 Wildcard.cpp
+-----           4/15/2025  6:24 AM           1065 Wildcard.h
+
+New-Ubuntu-Cuda12 directory:
