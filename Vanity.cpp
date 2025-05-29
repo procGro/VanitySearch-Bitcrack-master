@@ -61,6 +61,8 @@ VanitySearch::VanitySearch(Secp256K1* secp, vector<std::string>& inputAddresses,
 	addresses.clear();
 
 	// Create a 65536 items lookup table
+	// For Ethereum, this table will not be effectively used by the CPU path,
+	// as matching relies on iterating through `this->inputAddresses`.
 	ADDRESS_TABLE_ITEM t;
 	t.found = true;
 	t.items = NULL;
@@ -80,30 +82,40 @@ VanitySearch::VanitySearch(Secp256K1* secp, vector<std::string>& inputAddresses,
 	for (int i = 0; i < (int)inputAddresses.size(); i++) 
 	{
 		ADDRESS_ITEM it;
-		std::vector<ADDRESS_ITEM> itAddresses;
+		// For ETHEREUM, itAddresses vector is not really used in the same way,
+		// as sAddress/lAddress based lookup is bypassed.
+		// We still populate `it` to count `nbAddress`.
+		std::vector<ADDRESS_ITEM> itAddresses; 
 
-		if (initAddress(inputAddresses[i], &it)) {
+		// inputAddresses[i] is a reference to the string in the member vector.
+		// initAddress will modify it in-place for ETHEREUM mode (lowercase).
+		if (initAddress(inputAddresses[i], &it)) { 
 			bool* found = new bool;
 			*found = false;
 			it.found = found;
-			itAddresses.push_back(it);
+			// For Ethereum, it.address now points to the (now lowercased) string
+			// within the inputAddresses member vector itself.
+			itAddresses.push_back(it); 
 		}
 
 		if (itAddresses.size() > 0) 
 		{
 			// Add the item to all correspoding addresses in the lookup table
-			for (int j = 0; j < (int)itAddresses.size(); j++) 
-			{
-				address_t p = itAddresses[j].sAddress;
+			// This part is less relevant for ETHEREUM CPU search as it doesn't use the sAddress lookup table.
+			if (this->searchType != ETHEREUM) { // Use this->searchType
+				for (int j = 0; j < (int)itAddresses.size(); j++) 
+				{
+					address_t p = itAddresses[j].sAddress;
 
-				if (addresses[p].items == NULL) {
-					addresses[p].items = new vector<ADDRESS_ITEM>();
-					addresses[p].found = false;
-					usedAddress.push_back(p);
+					if (addresses[p].items == NULL) {
+						addresses[p].items = new vector<ADDRESS_ITEM>();
+						addresses[p].found = false;
+						usedAddress.push_back(p);
+					}
+					(*addresses[p].items).push_back(itAddresses[j]);
 				}
-				(*addresses[p].items).push_back(itAddresses[j]);
 			}
-			onlyFull &= it.isFull;
+			onlyFull &= it.isFull; // isFull is set correctly for Ethereum in initAddress
 			nbAddress++;
 		}
 
@@ -114,7 +126,8 @@ VanitySearch::VanitySearch(Secp256K1* secp, vector<std::string>& inputAddresses,
 	if (loadingProgress)
 		fprintf(stdout, "\n");
 
-	printf("Debug: Final searchType = %d, nbAddress = %d\n", searchType, nbAddress);
+	// Debug print removed as it was causing issues with static array searchModes
+	// printf("Debug: Final searchType = %d, nbAddress = %d\n", searchType, nbAddress);
 
 	if (nbAddress == 0) 
 	{
@@ -122,52 +135,56 @@ VanitySearch::VanitySearch(Secp256K1* secp, vector<std::string>& inputAddresses,
 		exit(-1);
 	}
 
-	// Second level lookup
+	// Second level lookup (less relevant for ETHEREUM CPU search)
 	uint32_t unique_sAddress = 0;
 	uint32_t minI = 0xFFFFFFFF;
 	uint32_t maxI = 0;
-	for (int i = 0; i < (int)addresses.size(); i++) 
-	{
-		
-		if (addresses[i].items) 
+	if (this->searchType != ETHEREUM) { // Use this->searchType
+		for (int i = 0; i < (int)addresses.size(); i++) 
 		{
-			
-			LADDRESS lit;
-			lit.sAddress = i;
 			if (addresses[i].items) 
 			{
-				for (int j = 0; j < (int)addresses[i].items->size(); j++) 
+				LADDRESS lit;
+				lit.sAddress = i;
+				if (addresses[i].items) 
 				{
-					lit.lAddresses.push_back((*addresses[i].items)[j].lAddress);
-					
+					for (int j = 0; j < (int)addresses[i].items->size(); j++) 
+					{
+						lit.lAddresses.push_back((*addresses[i].items)[j].lAddress);
+					}
 				}
+
+				sort(lit.lAddresses.begin(), lit.lAddresses.end());
+				usedAddressL.push_back(lit);
+				if ((uint32_t)lit.lAddresses.size() > maxI) maxI = (uint32_t)lit.lAddresses.size();
+				if ((uint32_t)lit.lAddresses.size() < minI) minI = (uint32_t)lit.lAddresses.size();
+				unique_sAddress++;
 			}
 
-			sort(lit.lAddresses.begin(), lit.lAddresses.end());
-			usedAddressL.push_back(lit);
-			if ((uint32_t)lit.lAddresses.size() > maxI) maxI = (uint32_t)lit.lAddresses.size();
-			if ((uint32_t)lit.lAddresses.size() < minI) minI = (uint32_t)lit.lAddresses.size();
-			unique_sAddress++;
+			if (loadingProgress) // This progress might be confusing if ETHEREUM is active
+				fprintf(stdout, "[Building lookup32 %.1f%%]\r", ((double)i * 100.0) / (double)addresses.size());
 		}
-
 		if (loadingProgress)
-			fprintf(stdout, "[Building lookup32 %.1f%%]\r", ((double)i * 100.0) / (double)addresses.size());
+			fprintf(stdout, "\n");
 	}
-
-	if (loadingProgress)
-		fprintf(stdout, "\n");
 	
-	string searchInfo = string(searchModes[searchMode]);
+	static const char* searchModes[] = {"P2PKH", "P2SH", "BECH32", "HASH160", "ETHEREUM"};
+	string searchInfo = string(searchModes[this->searchMode]); // Use this->searchMode
 	if (nbAddress < 10) 
 	{	
-		for (int i = 0; i < nbAddress; i++)
+		for (unsigned int i = 0; i < nbAddress; i++) // Use unsigned int for loop counter with nbAddress
 		{
+			// For Ethereum, inputAddresses[i] was already lowercased by initAddress
 			fprintf(stdout, "Search: %s [%s]\n", inputAddresses[i].c_str(), searchInfo.c_str());
 		}
 	}
 	else 
 	{		
-		fprintf(stdout, "Search: %d (Lookup size %d,[%d,%d]) [%s]\n", nbAddress, unique_sAddress, minI, maxI, searchInfo.c_str());
+		if (this->searchType == ETHEREUM) { // Use this->searchType
+			fprintf(stdout, "Search: %d Ethereum prefixes [%s]\n", nbAddress, searchInfo.c_str());
+		} else {
+			fprintf(stdout, "Search: %d (Lookup size %d,[%d,%d]) [%s]\n", nbAddress, unique_sAddress, minI, maxI, searchInfo.c_str());
+		}
 	}
 
 	//// Compute Generator table G[n] = (n+1)*G
@@ -213,216 +230,227 @@ bool VanitySearch::isSingularAddress(std::string pref) {
 	return only1;
 }
 
-bool VanitySearch::initAddress(std::string& address, ADDRESS_ITEM* it) {
+bool VanitySearch::initAddress(std::string& address_str_ref, ADDRESS_ITEM* it) { 
+	std::vector<unsigned char> result; // Used for Base58 decoding in BTC paths
+	// `this->searchMode` is the primary mode from command line (e.g. SEARCH_COMPRESSED, ETHEREUM).
+	// `this->searchType` is used internally for BTC type (P2PKH, P2SH etc.) or HASH160.
+	// If `this->searchMode` is ETHEREUM, `this->searchType` will be set to ETHEREUM by this function.
+	int nbDigit = 0; // Used by BTC address logic
+	bool wrong = false; // Used by BTC address logic
 
-	std::vector<unsigned char> result;
-	string dummy1 = address;
-	int nbDigit = 0;
-	bool wrong = false;
-
-	if (address.length() < 2) {
-		fprintf(stdout, "Ignoring address \"%s\" (too short)\n", address.c_str());
-		return false;
-	}
-
-	int aType = -1;
-
-	if (searchType == HASH160) {
-		aType = HASH160;
-		// For Hash160, just assign the type and skip validation
-		it->isFull = false;
-		it->sAddress = 0;
-		it->lAddress = 0;
-		it->address = (char*)address.c_str();
-		it->addressLength = (int)address.length();
-		return true;
-	} else {
-		// Otherwise determine address type from first character
-		switch (address.data()[0]) {
-		case '1':
-			aType = P2PKH;
-			break;
-		case '3':
-			aType = P2SH;
-			break;
-		case 'b':
-		case 'B':
-			std::transform(address.begin(), address.end(), address.begin(), ::tolower);
-			if (strncmp(address.c_str(), "bc1q", 4) == 0)
-				aType = BECH32;
-			break;
+	if (this->searchType == ETHEREUM) {
+		if (address_str_ref.rfind("0x", 0) != 0) { // Ensure prefix starts with "0x"
+			fprintf(stderr, "Error: Ethereum prefix \"%s\" must start with \"0x\".\n", address_str_ref.c_str());
+			return false;
 		}
-	}
-
-	if (aType == -1) {
-		fprintf(stdout, "Ignoring address \"%s\" (must start with 1 or 3 or bc1q, or use -hash160 for hex format)\n", address.c_str());
-		return false;
-	}
-
-	if (searchType == -1) searchType = aType;
-	if (aType != searchType) {
-		fprintf(stdout, "Ignoring address \"%s\" (P2PKH, P2SH, BECH32, or Hash160 allowed at once)\n", address.c_str());
-		return false;
-	}
-
-	// Handle Hash160 hex format
-	if (aType == HASH160) {
-		// For Hash160, we expect a hex string of 40 characters (20 bytes)
-		if (address.length() != 40) {
-			fprintf(stdout, "Warning: Hash160 \"%s\" should be 40 hex chars, padding/truncating\n", address.c_str());
+		if (address_str_ref.length() <= 2) { // Must have characters after "0x"
+			fprintf(stderr, "Error: Ethereum prefix \"%s\" is too short (must be > \"0x\").\n", address_str_ref.c_str());
+			return false;
+		}
+		if (address_str_ref.length() > 42) { // "0x" + 40 hex characters
+			fprintf(stderr, "Error: Ethereum prefix \"%s\" is too long (max 0x + 40 hex chars).\n", address_str_ref.c_str());
+			return false;
 		}
 
-		// Convert hex to binary
-		uint8_t hash160[20];
-		for (int i = 0; i < 20; i++) {
-			int offset = i * 2;
-			if (offset + 1 < (int)address.length()) {
-				char hex[3] = { address[offset], address[offset + 1], 0 };
-				unsigned int value;
-				if (sscanf(hex, "%x", &value) != 1) {
-					fprintf(stdout, "Ignoring Hash160 \"%s\" (invalid hex at position %d)\n", address.c_str(), offset);
-					return false;
-				}
-				hash160[i] = (uint8_t)value;
-			} else {
-				hash160[i] = 0;
+		std::string hex_part = address_str_ref.substr(2); // Extract hex part after "0x"
+		for (char c : hex_part) {
+			if (!isxdigit(c)) { // Check if all characters are valid hex digits
+				fprintf(stderr, "Error: Ethereum prefix \"%s\" contains non-hex characters after \"0x\".\n", address_str_ref.c_str());
+				return false;
 			}
 		}
-
-		// Store the hash directly
-		it->isFull = true;
-		memcpy(it->hash160, hash160, 20);
-		it->sAddress = *(address_t*)(it->hash160);
-		it->lAddress = *(addressl_t*)(it->hash160);
-		it->address = (char*)address.c_str();
-		it->addressLength = (int)address.length();
+		// Convert the original string (which is a reference to an element in inputAddresses) to lowercase.
+		// This ensures case-insensitive matching later.
+		std::transform(address_str_ref.begin(), address_str_ref.end(), address_str_ref.begin(), ::tolower);
+		
+		// Set ADDRESS_ITEM fields for Ethereum prefix
+		it->address = (char*)address_str_ref.c_str(); // Point to the (now lowercased) string in inputAddresses
+		it->addressLength = (int)address_str_ref.length();
+		it->isFull = (address_str_ref.length() == 42); // Full Ethereum address is "0x" + 40 hex chars
+		it->sAddress = 0; // Not used for Ethereum CPU matching logic
+		it->lAddress = 0; // Not used for Ethereum CPU matching logic
+		// it->hash160 is not used/set for Ethereum prefixes
 		return true;
 	}
-	else if (aType == BECH32) {
 
-		// BECH32
+
+	// --- Start of existing BTC/HASH160 address initialization logic ---
+	// This part remains largely unchanged but needs to be guarded by `this->searchType != ETHEREUM`
+	// where appropriate, or ensure `aType` is correctly determined if `this->searchType` was initially -1.
+
+	if (address_str_ref.length() < 2) {
+		fprintf(stdout, "Ignoring address \"%s\" (too short)\n", address_str_ref.c_str());
+		return false;
+	}
+
+	int aType = -1; // Local variable to determine type of current address_str_ref
+
+	// Determine aType based on address_str_ref, but only if not in ETHEREUM mode overall
+	if (this->searchType == HASH160) { 
+		aType = HASH160;
+	} else if (this->searchType != ETHEREUM) { // Fallback to BTC type detection if global mode is not ETH
+		switch (address_str_ref.data()[0]) {
+		case '1': aType = P2PKH; break;
+		case '3': aType = P2SH; break;
+		case 'b': case 'B':
+			std::string temp_addr_for_bech32 = address_str_ref;
+			std::transform(temp_addr_for_bech32.begin(), temp_addr_for_bech32.end(), temp_addr_for_bech32.begin(), ::tolower);
+			if (strncmp(temp_addr_for_bech32.c_str(), "bc1q", 4) == 0) {
+				aType = BECH32;
+				// Ensure original string in inputAddresses is also lowercased for BECH32
+				std::transform(address_str_ref.begin(), address_str_ref.end(), address_str_ref.begin(), ::tolower);
+			}
+			break;
+		}
+	}
+
+
+	// Validate aType against the global searchType (if already set)
+	if (this->searchType != ETHEREUM) { // These checks are for non-Ethereum modes
+		if (aType == -1) { // Could not determine type for a non-ETH address
+			fprintf(stdout, "Ignoring address \"%s\" (must start with 1, 3, bc1q, or be valid Hash160/ETH format)\n", address_str_ref.c_str());
+			return false;
+		}
+		if (this->searchType == -1) { // If global searchType is not yet set, set it based on first valid address
+			this->searchType = aType;
+		} else if (aType != this->searchType) { // Current address type mismatches global search type
+			fprintf(stdout, "Ignoring address \"%s\" (Mixed address types not allowed unless ETHEREUM mode is explicitly set for all ETH prefixes)\n", address_str_ref.c_str());
+			return false;
+		}
+	}
+
+
+	// --- Process based on determined aType (for HASH160, BECH32, P2PKH, P2SH) ---
+	if (aType == HASH160) {
+		if (address_str_ref.length() != 40) {
+			fprintf(stdout, "Warning: Hash160 \"%s\" should be 40 hex chars. GPU might require padding/truncating.\n", address_str_ref.c_str());
+		}
+		it->isFull = (address_str_ref.length() == 40);
+		// Convert hex to binary for hash160, sAddress, lAddress (primarily for GPU)
+		uint8_t hash160_bin[20];
+		for (int i = 0; i < 20; i++) {
+			int offset = i * 2;
+			if (offset + 1 < (int)address_str_ref.length()) {
+				char hex_pair[3] = { address_str_ref[offset], address_str_ref[offset + 1], 0 };
+				unsigned int value;
+				if (sscanf(hex_pair, "%x", &value) != 1) { /* error */ hash160_bin[i] = 0; } else { hash160_bin[i] = (uint8_t)value; }
+			} else { hash160_bin[i] = 0; }
+		}
+		memcpy(it->hash160, hash160_bin, 20);
+		it->sAddress = *(address_t*)(it->hash160);
+		it->lAddress = *(addressl_t*)(it->hash160);
+		it->address = (char*)address_str_ref.c_str();
+		it->addressLength = (int)address_str_ref.length();
+		return true;
+	}
+	else if (aType == BECH32) { // address_str_ref is already lowercased
 		uint8_t witprog[40];
 		size_t witprog_len;
 		int witver;
-		const char* hrp = "bc";
+		const char* hrp = "bc"; // or "tb" for testnet, adjust if needed
 
-		int ret = segwit_addr_decode(&witver, witprog, &witprog_len, hrp, address.c_str());
+		int decode_ret = segwit_addr_decode(&witver, witprog, &witprog_len, hrp, address_str_ref.c_str());
 
-		// Try to attack a full address ?
-		if (ret && witprog_len == 20) {
-						
+		if (decode_ret && witprog_len == 20) { // Full Bech32 address
 			it->isFull = true;
 			memcpy(it->hash160, witprog, 20);
 			it->sAddress = *(address_t*)(it->hash160);
 			it->lAddress = *(addressl_t*)(it->hash160);
-			it->address = (char*)address.c_str();
-			it->addressLength = (int)address.length();
+			it->address = (char*)address_str_ref.c_str();
+			it->addressLength = (int)address_str_ref.length();
 			return true;
-
 		}
-
-		if (address.length() < 5) {
-			fprintf(stdout, "Ignoring address \"%s\" (too short, length<5 )\n", address.c_str());
+		// Partial Bech32 prefix
+		if (address_str_ref.length() < 5) { // "bc1q" + at least one char
+			fprintf(stdout, "Ignoring BECH32 address \"%s\" (too short, length<5 for prefix after bc1q)\n", address_str_ref.c_str());
 			return false;
 		}
+		// Max length for a bech32 prefix if not full (GPU might have limits)
+		// For CPU, length is less of a concern for prefix matching itself.
+		// The GPU code for BECH32 uses a specific length (5 chars after "bc1q")
+		// For CPU, we can be more flexible, but let's align with potential GPU limitations if any.
 
-		if (address.length() >= 36) {
-			fprintf(stdout, "Ignoring address \"%s\" (too long, length>36 )\n", address.c_str());
-			return false;
-		}
-
-		uint8_t data[64];
+		uint8_t data[64]; // Buffer for decoded prefix
 		memset(data, 0, 64);
-		size_t data_length;
-		if (!bech32_decode_nocheck(data, &data_length, address.c_str() + 4)) {
-			fprintf(stdout, "Ignoring address \"%s\" (Only \"023456789acdefghjklmnpqrstuvwxyz\" allowed)\n", address.c_str());
+		size_t decoded_data_length;
+		// We need to decode the part *after* "hrp1" + separator, e.g., "bc1q" -> hrp="bc", separator='1'
+		// The prefix to check is after "bc1q"
+		if (!bech32_decode_nocheck(data, &decoded_data_length, address_str_ref.c_str() + 4)) {
+			fprintf(stdout, "Ignoring BECH32 address \"%s\" (prefix contains invalid characters)\n", address_str_ref.c_str());
 			return false;
 		}
 		
-		it->sAddress = *(address_t*)data;		
+		it->sAddress = *(address_t*)data; // Store the first 2 bytes of the decoded prefix part
 		it->isFull = false;
-		it->lAddress = 0;
-		it->address = (char*)address.c_str();
-		it->addressLength = (int)address.length();
-
+		it->lAddress = 0; // Not used for partial prefix matching in the same way
+		it->address = (char*)address_str_ref.c_str();
+		it->addressLength = (int)address_str_ref.length();
 		return true;
 	}
-	else {
-
+	else if (aType == P2PKH || aType == P2SH) {
 		// P2PKH/P2SH
-		wrong = !DecodeBase58(address, result);
+		std::string p2pkh_dummy = address_str_ref; // Use a copy for base58 manipulation
+		wrong = !DecodeBase58(p2pkh_dummy, result);
 
 		if (wrong) {
-			fprintf(stdout, "Ignoring address \"%s\" (0, I, O and l not allowed)\n", address.c_str());
+			fprintf(stdout, "Ignoring address \"%s\" (0, I, O and l not allowed)\n", address_str_ref.c_str());
 			return false;
 		}
 
-		// Try to attack a full address ?
-		if (result.size() > 21) {
-			
+		if (result.size() > 21 && result.size() <= 25) { // Full P2PKH/P2SH address (20 byte hash + 1 version + 4 checksum = 25)
 			it->isFull = true;
 			memcpy(it->hash160, result.data() + 1, 20);
 			it->sAddress = *(address_t*)(it->hash160);
 			it->lAddress = *(addressl_t*)(it->hash160);
-			it->address = (char*)address.c_str();
-			it->addressLength = (int)address.length();
+			it->address = (char*)address_str_ref.c_str();
+			it->addressLength = (int)address_str_ref.length();
 			return true;
 		}
 
-		// Address containing only '1'
-		if (isSingularAddress(address)) {
-
-			if (address.length() > 21) {
-				fprintf(stdout, "Ignoring address \"%s\" (Too much 1)\n", address.c_str());
+		// Partial P2PKH/P2SH prefix
+		if (isSingularAddress(address_str_ref)) { // Address containing only '1's (common short prefix)
+			if (address_str_ref.length() > 21) { // Heuristic limit
+				fprintf(stdout, "Ignoring address \"%s\" (Too many 1s for a practical prefix)\n", address_str_ref.c_str());
 				return false;
 			}
-			
 			it->isFull = false;
-			it->sAddress = 0;
+			it->sAddress = 0; // sAddress for '111...' is 0
 			it->lAddress = 0;
-			it->address = (char*)address.c_str();
-			it->addressLength = (int)address.length();
+			it->address = (char*)address_str_ref.c_str();
+			it->addressLength = (int)address_str_ref.length();
 			return true;
 		}
 
-		// Search for highest hash160 16bit address (most probable)
-		while (result.size() < 25) {
-			DecodeBase58(dummy1, result);
-			if (result.size() < 25) {
-				dummy1.append("1");
-				nbDigit++;
+		// For other partial prefixes, determine sAddress by padding with '1's
+		// This logic is for GPU compatibility; CPU matching will use the string directly.
+		std::string temp_for_saddr = address_str_ref;
+		std::vector<unsigned char> saddr_result_bytes;
+		while (saddr_result_bytes.size() < 25 && temp_for_saddr.length() < 34) { // 34 is approx max P2PKH
+			DecodeBase58(temp_for_saddr, saddr_result_bytes);
+			if (saddr_result_bytes.size() < 25) {
+				temp_for_saddr.append("1"); // Append '1' as it's the smallest char in base58
 			}
 		}
-
-		if (searchType == P2SH) {
-			if (result.data()[0] != 5) {
-				fprintf(stdout, "Ignoring address \"%s\" (Unreachable, 31h1 to 3R2c only)\n", address.c_str());
+		if (saddr_result_bytes.size() == 25) {
+			if (this->searchType == P2SH && saddr_result_bytes[0] != 5) { // Use this->searchType
+                 // This check might be too strict for prefixes if the prefix itself doesn't determine the version byte yet.
+				 // For now, keep it for consistency with full address validation.
+				fprintf(stdout, "Ignoring P2SH prefix \"%s\" (Padding suggests unreachable version byte)\n", address_str_ref.c_str());
 				return false;
 			}
-		}
-
-		if (result.size() != 25) {
-			fprintf(stdout, "Ignoring address \"%s\" (Invalid size)\n", address.c_str());
-			return false;
-		}
-
-		it->sAddress = *(address_t*)(result.data() + 1);
-
-		dummy1.append("1");
-		DecodeBase58(dummy1, result);
-
-		if (result.size() == 25) {
-			it->sAddress = *(address_t*)(result.data() + 1);
-			nbDigit++;
-		}
+			it->sAddress = *(address_t*)(saddr_result_bytes.data() + 1);
+		} else {
+            fprintf(stdout, "Warning: Could not determine sAddress for prefix \"%s\" by padding.\n", address_str_ref.c_str());
+			it->sAddress = 0; // Default or error indicator
+        }
 		
 		it->isFull = false;
 		it->lAddress = 0;
-		it->address = (char*)address.c_str();
-		it->addressLength = (int)address.length();
-
+		it->address = (char*)address_str_ref.c_str();
+		it->addressLength = (int)address_str_ref.length();
 		return true;
 	}
+	return false; // Should not be reached if logic is correct
 }
 
 void VanitySearch::enumCaseUnsentiveAddress(std::string s, std::vector<std::string>& list) {
@@ -542,11 +570,31 @@ void VanitySearch::output(string addr, string pAddr, string pAddrHex, std::strin
 			fprintf(f, "Priv (WIF): %s\n", pAddr.c_str());
 		fprintf(stdout, "Priv (WIF): %s\n", pAddr.c_str());
 		break;
+	case ETHEREUM: // New case for Ethereum
+		if (f != stdout) {
+			fprintf(f, "Priv (HEX): 0x%s\n", pAddr.c_str()); // pAddr is used as privKeyRepresentation (Ethereum hex private key)
+			// Optionally print public key:
+			// if (!pubKey.empty()) {
+			//     fprintf(f, "Pub Key (HEX): %s\n", pubKey.c_str());
+			// }
+		}
+		fprintf(stdout, "Priv (HEX): 0x%s\n", pAddr.c_str()); // pAddr is used as privKeyRepresentation
+		// Optionally print public key to stdout:
+		// if (!pubKey.empty()) {
+		//     fprintf(stdout, "Pub Key (HEX): %s\n", pubKey.c_str());
+		// }
+		break;
 	}
 
-	if (f != stdout)
-		fprintf(f, "Priv (HEX): 0x%s\n", pAddrHex.c_str());	
-	fprintf(stdout, "Priv (HEX): 0x%s\n", pAddrHex.c_str());
+	// For non-Ethereum types, pAddrHex is the second private key representation.
+	// For Ethereum, this line is effectively skipped due to the break in the ETHEREUM case,
+	// or pAddrHex would be empty if not specifically populated for ETH.
+	// However, to be clean, we can conditionalize this.
+	if (searchType != ETHEREUM) {
+		if (f != stdout)
+			fprintf(f, "Priv (HEX): 0x%s\n", pAddrHex.c_str());	
+		fprintf(stdout, "Priv (HEX): 0x%s\n", pAddrHex.c_str());
+	}
 	fprintf(stdout, "\n");
 
 	if (f != stdout)
@@ -589,54 +637,97 @@ void VanitySearch::updateFound() {
 	}		
 }
 
-bool VanitySearch::checkPrivKey(string addr, Int& key, int32_t incr, int endomorphism, bool mode) {
+bool VanitySearch::checkPrivKey(string addr_matched, Int& key_base_priv, int32_t incr_priv, int endomorphism_priv, bool mode_comp_priv) {
 
-	Int k(&key);	
-
-	if (incr < 0) {
-		k.Add((uint64_t)(-incr));
-		k.Neg();
-		k.Add(&secp->order);		
-	}
-	else {
-		k.Add((uint64_t)incr);
-	}
-
-	// Endomorphisms
-	switch (endomorphism) {
-	case 1:
-		k.ModMulK1order(&lambda);		
-		break;
-	case 2:
-		k.ModMulK1order(&lambda2);		
-		break;
-	}
-
-	// Check addresses
-	Point p = secp->ComputePublicKey(&k);	
-
-	string chkAddr = secp->GetAddress(searchType, mode, p);
-	if (chkAddr != addr) {
-
-		// Key may be the opposite one (negative zero or compressed key)
-		k.Neg();
-		k.Add(&secp->order);
-		p = secp->ComputePublicKey(&k);
-		
-		string chkAddr = secp->GetAddress(searchType, mode, p);
-		if (chkAddr != addr) {
-			fprintf(stdout, "\nWarning, wrong private key generated !\n");
-			fprintf(stdout, "  Addr :%s\n", addr.c_str());
-			fprintf(stdout, "  Check:%s\n", chkAddr.c_str());
-			fprintf(stdout, "  Endo:%d incr:%d comp:%d\n", endomorphism, incr, mode);
-			return false;
+	if (this->searchType == ETHEREUM) {
+		Int k_actual(key_base_priv);
+		if (incr_priv < 0) {
+			k_actual.Add((uint64_t)(-incr_priv));
+			k_actual.Neg();
+			k_actual.Add(&secp->order);
+		} else {
+			k_actual.Add((uint64_t)incr_priv);
 		}
 
+		// Apply endomorphism (assuming endomorphism_priv = 0 for typical Ethereum search for now)
+		// This part might need to be conditional if endomorphism isn't used for ETH.
+		// For now, include it for completeness, matching potential structure.
+		switch (endomorphism_priv) {
+			case 1: k_actual.ModMulK1order(&lambda); break; // lambda is a class member
+			case 2: k_actual.ModMulK1order(&lambda2); break; // lambda2 is a class member
+		}
+
+		Point p = secp->ComputePublicKey(&k_actual);
+		std::string chkAddr = secp->GetEthereumAddress(p); // Returns lowercase "0x..."
+
+		// addr_matched is assumed to be lowercase "0x..." from checkAddr
+		if (chkAddr == addr_matched) {
+			// Parameters for output:
+			// 1. Matched address string (addr_matched)
+			// 2. Ethereum private key as HEX string (from secp->GetEthereumPrivateKeyHex(&k_actual))
+			// 3. Bitcoin WIF private key hex (k_actual.GetBase16()) - can still be useful as raw hex, but output fn will ignore for ETH.
+			// 4. Public key hex string (from secp->GetPublicKeyHex(false, p)) - optional
+			output(addr_matched, 
+				   secp->GetEthereumPrivateKeyHex(k_actual), // This is the primary private key string for ETH output
+				   k_actual.GetBase16(),                     // Raw private key hex, passed as the 3rd param. Output fn will ignore for ETH.
+				   secp->GetPublicKeyHex(false, p));         // Full uncompressed public key
+			return true;
+		} else {
+			fprintf(stdout, "\nWarning, Ethereum address mismatch in checkPrivKey!\n");
+			fprintf(stdout, "  Expected: %s\n", addr_matched.c_str());
+			fprintf(stdout, "  Derived:  %s\n", chkAddr.c_str());
+			return false;
+		}
 	}
+	// Else, the existing Bitcoin logic follows
+	else {
+		Int k(key_base_priv);	
 
-	output(addr, secp->GetPrivAddress(mode, k), k.GetBase16(), secp->GetPublicKeyHex(mode, p));
+		if (incr_priv < 0) {
+			k.Add((uint64_t)(-incr_priv));
+			k.Neg();
+			k.Add(&secp->order);		
+		}
+		else {
+			k.Add((uint64_t)incr_priv);
+		}
 
-	return true;
+		// Endomorphisms
+		switch (endomorphism_priv) {
+		case 1:
+			k.ModMulK1order(&lambda);		
+			break;
+		case 2:
+			k.ModMulK1order(&lambda2);		
+			break;
+		}
+
+		// Check addresses
+		Point p = secp->ComputePublicKey(&k);	
+
+		string chkAddr = secp->GetAddress(searchType, mode_comp_priv, p);
+		if (chkAddr != addr_matched) {
+
+			// Key may be the opposite one (negative zero or compressed key)
+			k.Neg();
+			k.Add(&secp->order);
+			p = secp->ComputePublicKey(&k);
+			
+			string chkAddr_neg = secp->GetAddress(searchType, mode_comp_priv, p); // Renamed to avoid conflict
+			if (chkAddr_neg != addr_matched) {
+				fprintf(stdout, "\nWarning, wrong private key generated !\n");
+				fprintf(stdout, "  Addr :%s\n", addr_matched.c_str());
+				fprintf(stdout, "  Check:%s\n", chkAddr.c_str()); // Original chkAddr
+				fprintf(stdout, "  Check (neg):%s\n", chkAddr_neg.c_str()); // Check with negated key
+				fprintf(stdout, "  Endo:%d incr:%d comp:%d\n", endomorphism_priv, incr_priv, mode_comp_priv);
+				return false;
+			}
+		}
+
+		output(addr_matched, secp->GetPrivAddress(mode_comp_priv, k), k.GetBase16(), secp->GetPublicKeyHex(mode_comp_priv, p));
+
+		return true;
+	}
 }
 
 void VanitySearch::checkAddrSSE(uint8_t* h1, uint8_t* h2, uint8_t* h3, uint8_t* h4,
@@ -689,92 +780,123 @@ void VanitySearch::checkAddrSSE(uint8_t* h1, uint8_t* h2, uint8_t* h3, uint8_t* 
 	}
 }
 
-void VanitySearch::checkAddr(int prefIdx, uint8_t* hash160, Int& key, int32_t incr, int endomorphism, bool mode) {
+void VanitySearch::checkAddr(int prefIdx, uint8_t* hash160_btc, Int& key_base, int32_t incr, int endomorphism, bool mode_bitcoin) {
 	
-	vector<ADDRESS_ITEM>* pi = addresses[prefIdx].items;	
-
-	if (onlyFull) {
-		// Full addresses
-		for (int i = 0; i < (int)pi->size(); i++) {
-
-			if (stopWhenFound && *((*pi)[i].found))
-				continue;
-
-			bool match = false;
-			
-			if (searchType == HASH160) {
-				// For Hash160 mode, directly compare the hash160 values
-				match = memcmp((*pi)[i].hash160, hash160, 20) == 0;
-			} else {
-				// For normal modes, use the existing comparison
-				match = ripemd160_comp_hash((*pi)[i].hash160, hash160);
-			}
-
-			if (match) {
-				// Found it!
-				*((*pi)[i].found) = true;
-				// You believe it?
-				
-				string address;
-				if (searchType == HASH160) {
-					// For Hash160, use the hex representation as the match address
-					address = hash160ToHex(hash160);
-				} else {
-					// For normal modes, get the actual address
-					address = secp->GetAddress(searchType, mode, hash160);
-				}
-				
-				if (checkPrivKey(address, key, incr, endomorphism, mode)) {
-					nbFoundKey++;
-					updateFound();
-				}
-			}
-		}
-	}
-	else {
-		char a[64];
-
-		string addr;
-		if (searchType == HASH160) {
-			// For Hash160, use the hex representation as the match address
-			addr = hash160ToHex(hash160);
+	if (this->searchType == ETHEREUM) {
+		Int k_actual(key_base); // Use key_base from parameters
+		if (incr < 0) {
+			k_actual.Add((uint64_t)(-incr));
+			k_actual.Neg();
+			k_actual.Add(&secp->order);
 		} else {
-			// For normal modes, get the actual address
-			addr = secp->GetAddress(searchType, mode, hash160);
+			k_actual.Add((uint64_t)incr);
 		}
 
-		for (int i = 0; i < (int)pi->size(); i++) {
+		switch (endomorphism) {
+			case 1: k_actual.ModMulK1order(&lambda); break;
+			case 2: k_actual.ModMulK1order(&lambda2); break;
+		}
 
-			if (stopWhenFound && *((*pi)[i].found))
-				continue;
+		Point p = secp->ComputePublicKey(&k_actual);
+		std::string ethAddrFull = secp->GetEthereumAddress(p); // Lowercase "0x..."
 
-			// For Hash160 partial matches, we need to compare hex values
-			if (searchType == HASH160) {
-				string prefix((*pi)[i].address, (*pi)[i].addressLength);
-				if (addr.find(prefix) == 0) {
-					// Found it!
-					*((*pi)[i].found) = true;
-					if (checkPrivKey(addr, key, incr, endomorphism, mode)) {
-						nbFoundKey++;
-						updateFound();
-					}
-				}
-			} else {
-				// Standard address comparison for normal modes
-				strncpy(a, addr.c_str(), (*pi)[i].addressLength);
-				a[(*pi)[i].addressLength] = 0;
+		// Iterate through all target prefixes stored in this->inputAddresses
+		for (size_t i = 0; i < this->inputAddresses.size(); ++i) {
+			// this->inputAddresses[i] was already lowercased and validated by initAddress
+			const std::string& targetPrefixString = this->inputAddresses[i]; 
 
-				if (strcmp((*pi)[i].address, a) == 0) {
-					// Found it!
-					*((*pi)[i].found) = true;
-					if (checkPrivKey(addr, key, incr, endomorphism, mode)) {
-						nbFoundKey++;
-						updateFound();
+			if (ethAddrFull.rfind(targetPrefixString, 0) == 0) { // string::rfind for prefix check
+				// Match found! Call checkPrivKey to verify and output.
+				// mode_bitcoin (compression) is irrelevant for ETH path in checkPrivKey.
+				// Parameters to checkPrivKey: matched_address, base_key, increment, endomorphism_type, compression_mode (false for ETH)
+				if (checkPrivKey(ethAddrFull, key_base, incr, endomorphism, false)) { 
+					// nbFoundKey and updateFound() are called within checkPrivKey -> output -> updateFound path.
+					// updateFound() handles setting this->endOfSearch if stopWhenFound is true and all are found.
+					if (this->stopWhenFound && (this->nbFoundKey >= this->inputAddresses.size() || this->nbFoundKey >= this->maxFound) ) { 
+						 this->endOfSearch = true; // Signal to stop searching in other threads/contexts
+						 return; // Exit checkAddr early
 					}
 				}
 			}
 		}
+		return; // Finished checking all Ethereum prefixes for this key
 	}
+	// Else, the existing Bitcoin logic follows (which uses prefIdx and hash160_btc)
+	else {
+		vector<ADDRESS_ITEM>* pi = addresses[prefIdx].items;	
+
+		if (onlyFull) {
+			// Full addresses
+			for (int i = 0; i < (int)pi->size(); i++) {
+
+				if (stopWhenFound && *((*pi)[i].found))
+					continue;
+
+				bool match = false;
+			
+				if (this->searchType == HASH160) { // Use this->searchType
+					match = memcmp((*pi)[i].hash160, hash160_btc, 20) == 0;
+				} else {
+					match = ripemd160_comp_hash((*pi)[i].hash160, hash160_btc);
+				}
+
+				if (match) {
+					// Found it!
+					*((*pi)[i].found) = true;
+					// You believe it?
+				
+					string address;
+					if (this->searchType == HASH160) { // Use this->searchType
+						address = hash160ToHex(hash160_btc);
+					} else {
+						address = secp->GetAddress(this->searchType, mode_bitcoin, hash160_btc); // Use this->searchType
+					}
+				
+					if (checkPrivKey(address, key_base, incr, endomorphism, mode_bitcoin)) {
+						// nbFoundKey is incremented in output -> checkPrivKey path
+						updateFound(); 
+					}
+				}
+			}
+		}
+		else { // Not onlyFull (partial match logic for BTC types)
+			char a[64]; // Buffer for prefix comparison
+
+			string addr_str_from_hash; 
+			if (this->searchType == HASH160) { // Use this->searchType
+				addr_str_from_hash = hash160ToHex(hash160_btc);
+			} else {
+				addr_str_from_hash = secp->GetAddress(this->searchType, mode_bitcoin, hash160_btc); // Use this->searchType
+			}
+
+			for (int i = 0; i < (int)pi->size(); i++) {
+				if (stopWhenFound && *((*pi)[i].found))
+					continue;
+
+				if (this->searchType == HASH160) { // Use this->searchType
+					string prefix_to_match((*pi)[i].address, (*pi)[i].addressLength);
+					if (addr_str_from_hash.rfind(prefix_to_match, 0) == 0) { 
+						*((*pi)[i].found) = true;
+						if (checkPrivKey(addr_str_from_hash, key_base, incr, endomorphism, mode_bitcoin)) {
+							updateFound();
+						}
+					}
+				} else {
+					if ((*pi)[i].addressLength < 64) { // Ensure no buffer overflow
+						strncpy(a, addr_str_from_hash.c_str(), (*pi)[i].addressLength);
+						a[(*pi)[i].addressLength] = 0;
+
+						if (strcmp((*pi)[i].address, a) == 0) {
+							*((*pi)[i].found) = true;
+							if (checkPrivKey(addr_str_from_hash, key_base, incr, endomorphism, mode_bitcoin)) {
+								updateFound();
+							}
+						}
+					}
+				}
+			}
+		}
+	} // End of existing Bitcoin logic (else block)
 }
 
 #ifdef WIN64

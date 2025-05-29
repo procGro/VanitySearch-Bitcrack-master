@@ -20,7 +20,10 @@
 #include "hash/ripemd160.h"
 #include "Base58.h"
 #include "Bech32.h"
+#include "hash/Keccak256.hpp" // Replaced placeholder with Nayuki's Keccak256
 #include <string.h>
+#include <iomanip> // For std::hex, std::setw, std::setfill
+#include <sstream> // For std::ostringstream
 
 Secp256K1::Secp256K1() {
 }
@@ -548,6 +551,14 @@ std::string Secp256K1::GetPublicKeyHex(bool compressed, Point &pubKey) {
 
 }
 
+void Secp256K1::GetUncompressedPublicKeyBytes(Point &pubKey, unsigned char* output64Bytes) {
+    // Point coordinates (x, y) are of type Int.
+    // Int::Get32Bytes serializes them into 32-byte arrays.
+    // Ethereum public key for hashing is X concatenated with Y.
+    pubKey.x.Get32Bytes(output64Bytes);
+    pubKey.y.Get32Bytes(output64Bytes + 32);
+}
+
 void Secp256K1::GetHash160(int type, bool compressed, Point &pubKey, unsigned char *hash) {
 
   unsigned char shapk[64];
@@ -622,6 +633,16 @@ std::string Secp256K1::GetPrivAddress(bool compressed,Int &privKey) {
 
   }
 
+}
+
+std::string Secp256K1::GetEthereumPrivateKeyHex(Int &privKey) {
+    unsigned char keyBytes[32];
+    privKey.Get32Bytes(keyBytes);
+    std::ostringstream oss;
+    for (int i = 0; i < 32; ++i) {
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(keyBytes[i]);
+    }
+    return oss.str();
 }
 
 #define CHECKSUM(buff,A) \
@@ -773,6 +794,26 @@ std::string Secp256K1::GetAddress(int type, bool compressed, Point &pubKey) {
   // Base58
   return EncodeBase58(address, address + 25);
 
+}
+
+std::string Secp256K1::GetEthereumAddress(Point &pubKey) {
+    unsigned char publicKeyBytes[64];
+    GetUncompressedPublicKeyBytes(pubKey, publicKeyBytes);
+
+    unsigned char hash[32];
+    Keccak256::getHash(publicKeyBytes, 64, hash); // Call to Nayuki's Keccak256
+
+    // Ethereum address is the last 20 bytes of the Keccak-256 hash
+    // (offset 12 means bytes 12 through 31)
+    unsigned char addressBytes[20];
+    memcpy(addressBytes, hash + 12, 20);
+
+    std::ostringstream oss;
+    oss << "0x";
+    for (int i = 0; i < 20; ++i) {
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(addressBytes[i]);
+    }
+    return oss.str();
 }
 
 bool Secp256K1::CheckPudAddress(std::string address) {

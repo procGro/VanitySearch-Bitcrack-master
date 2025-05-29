@@ -611,6 +611,7 @@ int main(int argc, char* argv[]) {
 	int searchMode = SEARCH_COMPRESSED;
 	bool useHash160 = false;  // Flag to indicate we're in Hash160 search mode
 	bool convertAddresses = false;  // Flag to indicate if addresses should be converted to hash160
+	bool isEthereumMode = false; // Flag for Ethereum mode
 	vector<int> gpuId = { 0 };
 	string gpuParsed = "0";
 	vector<int> gridSize;
@@ -682,6 +683,10 @@ int main(int argc, char* argv[]) {
 			convertAddresses = true;  // Convert addresses to hash160
 			a++;
 		}
+		else if (strcmp(argv[a], "-eth") == 0 || strcmp(argv[a], "--ethereum") == 0) {
+			isEthereumMode = true;
+			a++;
+		}
 		else if (strcmp(argv[a], "-range") == 0) {
 			a++;
 			range = (uint64_t)getInt("range", argv[a]);
@@ -704,6 +709,13 @@ int main(int argc, char* argv[]) {
 	}
 
 	fprintf(stdout, "VanitySearch-Bitcrack v" RELEASE "\n");
+
+	// Ethereum mode takes precedence
+	if (isEthereumMode) {
+		searchMode = ETHEREUM; // ETHEREUM is defined in SECP256K1.h
+		useHash160 = false;    // Disable Bitcoin Hash160 mode for Ethereum
+		fprintf(stdout, "Ethereum Vanity Search Mode Enabled\n");
+	}
 
 	// Parse comma-separated GPU IDs
 	std::vector<int> gpuIds = parseGPUIds(gpuParsed);
@@ -744,8 +756,8 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	// Set search type to HASH160 if we're using Hash160 search mode
-	if (useHash160) {
+	// Set search type to HASH160 if we're using Hash160 search mode (and not Ethereum mode)
+	if (useHash160 && !isEthereumMode) {
 		searchMode = SEARCH_COMPRESSED;  // We'll still compress keys for efficiency
 		for (int i = 0; i < address.size(); i++) {
 			// Ensure address is properly formatted for Hash160 search
@@ -784,9 +796,10 @@ int main(int argc, char* argv[]) {
 		if (randomMode) {
 			fprintf(stdout, "Random Mode\n");
 		}
-		if (useHash160) {
+		if (useHash160 && !isEthereumMode) {
 			fprintf(stdout, "Hash160 Direct Search Mode\n");
 		}
+		// Message for Ethereum mode is printed earlier
 		fprintf(stdout, "Using %d GPU(s)\n", numGPUs);
 		fflush(stdout);
 
@@ -798,10 +811,16 @@ int main(int argc, char* argv[]) {
 		Paused = false;
 		VanitySearch* v = new VanitySearch(secp, address, searchMode, stop, outputFile, maxFound, bc);
 
-		// Set search type to HASH160 if using that mode
-		if (useHash160) {
+		// Set search type to HASH160 if using that mode (and not Ethereum mode)
+		// For Ethereum mode, searchMode is already ETHEREUM.
+		// The VanitySearch class will need to handle the ETHEREUM searchMode.
+		if (useHash160 && !isEthereumMode) {
 			v->SetSearchType(HASH160);
 		}
+		// If isEthereumMode is true, searchMode is already ETHEREUM.
+		// The call to v->SetSearchType(ETHEREUM) might be redundant if constructor handles it,
+		// or necessary if SetSearchType is the sole method to configure this.
+		// For now, we rely on the constructor argument `searchMode`.
 
 		v->Search(gpuIds, gridSize);
 

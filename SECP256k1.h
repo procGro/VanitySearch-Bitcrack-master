@@ -27,6 +27,7 @@
 #define P2SH   1
 #define BECH32 2
 #define HASH160 3  // New search type for direct Hash160 hex searching
+#define ETHEREUM 4 
 
 class Secp256K1 {
 
@@ -54,6 +55,10 @@ public:
   Point ParsePublicKeyHex(std::string str, bool &isCompressed);
 
   bool CheckPudAddress(std::string address);
+
+  std::string GetEthereumAddress(Point &pubKey);
+  std::string GetEthereumPrivateKeyHex(Int &privKey);
+  void GetUncompressedPublicKeyBytes(Point &pubKey, unsigned char* output64Bytes); // Helper
 
   static Int DecodePrivateKey(char *key,bool *compressed);
 
