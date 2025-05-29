@@ -17,6 +17,7 @@
 
 #ifndef SHA512_H
 #define SHA512_H
+#include <cstdint>
 #include <string>
 
 void sha512(unsigned char *input, int length, unsigned char *digest);
