@@ -338,9 +338,9 @@ void checkKeySpace(BITCRACK_PARAM* bc, Int& maxKey)
 		exit(-1);
 	}
 
-	if (bc->ksFinish.IsLowerOrEqual(&bc->ksStart))
+	if (bc->ksFinish.IsLower(&bc->ksStart)) // Changed IsLowerOrEqual to IsLower
 	{
-		fprintf(stderr, "[ERROR] END IsLowerOrEqual START \n");
+		fprintf(stderr, "[ERROR] END IsLower START \n"); // Optionally update error message
 		exit(-1);
 	}
 
